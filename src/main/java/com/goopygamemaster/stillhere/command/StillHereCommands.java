@@ -2,11 +2,15 @@ package com.goopygamemaster.stillhere.command;
 
 import com.goopygamemaster.stillhere.director.HorrorPhase;
 import com.goopygamemaster.stillhere.director.StillHereDirector;
+import com.goopygamemaster.stillhere.event.BackstepDebugHandler;
+import com.goopygamemaster.stillhere.event.MobStaringHandler;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 
 public final class StillHereCommands {
     private StillHereCommands() {
@@ -17,6 +21,18 @@ public final class StillHereCommands {
                 Commands.literal("stillhere")
                         .then(Commands.literal("phase")
                                 .executes(context -> showPhase(context.getSource())))
+                        .then(Commands.literal("stare")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceStare(context.getSource())))
+                        .then(Commands.literal("avoid")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceAvoidance(context.getSource())))
+                        .then(Commands.literal("flee")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceFlee(context.getSource())))
+                        .then(Commands.literal("backstep")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceBackstep(context.getSource())))
         );
     }
 
@@ -34,5 +50,57 @@ public final class StillHereCommands {
         );
 
         return 1;
+    }
+
+    private static int forceStare(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+
+        int affectedMobs = MobStaringHandler.INSTANCE.forceDebugStare(player);
+
+        source.sendSuccess(
+                () -> Component.literal("Still Here debug stare triggered. Mobs affected: " + affectedMobs),
+                false
+        );
+
+        return affectedMobs;
+    }
+
+    private static int forceAvoidance(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+
+        int affectedMobs = MobStaringHandler.INSTANCE.forceDebugAvoidance(player);
+
+        source.sendSuccess(
+                () -> Component.literal("Still Here debug avoidance triggered. Mobs affected: " + affectedMobs),
+                false
+        );
+
+        return affectedMobs;
+    }
+
+    private static int forceFlee(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+
+        int affectedMobs = MobStaringHandler.INSTANCE.forceDebugFlee(player);
+
+        source.sendSuccess(
+                () -> Component.literal("Still Here debug flee triggered. Mobs affected: " + affectedMobs),
+                false
+        );
+
+        return affectedMobs;
+    }
+
+    private static int forceBackstep(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+
+        int affectedMobs = BackstepDebugHandler.INSTANCE.forceDebugBackstep(player);
+
+        source.sendSuccess(
+                () -> Component.literal("Still Here debug backstep triggered. Mobs affected: " + affectedMobs),
+                false
+        );
+
+        return affectedMobs;
     }
 }
