@@ -152,6 +152,8 @@ public class MobStaringHandler {
             return;
         }
 
+        StillHereDirector.INSTANCE.recordPassiveMobAttack(player);
+
         long gameTime = level.getGameTime();
         UUID playerId = player.getUUID();
 

@@ -1,6 +1,7 @@
 package com.goopygamemaster.stillhere.command;
 
 import com.goopygamemaster.stillhere.director.HorrorPhase;
+import com.goopygamemaster.stillhere.director.PlayerProfile;
 import com.goopygamemaster.stillhere.director.StillHereDirector;
 import com.goopygamemaster.stillhere.event.BackstepDebugHandler;
 import com.goopygamemaster.stillhere.event.MobStaringHandler;
@@ -21,6 +22,9 @@ public final class StillHereCommands {
                 Commands.literal("stillhere")
                         .then(Commands.literal("phase")
                                 .executes(context -> showPhase(context.getSource())))
+                        .then(Commands.literal("profile")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> showProfile(context.getSource())))
                         .then(Commands.literal("stare")
                                 .requires(source -> source.hasPermission(2))
                                 .executes(context -> forceStare(context.getSource())))
@@ -46,6 +50,26 @@ public final class StillHereCommands {
         source.sendSuccess(
                 () -> Component.literal("Still Here Phase: " + phase.id() + " - " + phase.displayName()
                         + " | World Day: " + (worldDay + 1)),
+                false
+        );
+
+        return 1;
+    }
+
+    private static int showProfile(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlayerProfile profile = StillHereDirector.INSTANCE.getProfile(player);
+
+        source.sendSuccess(
+                () -> Component.literal(
+                        "Still Here Profile"
+                                + " | Guilt: " + profile.guilt()
+                                + " | Remorse: " + profile.remorse()
+                                + " | Village Threat: " + profile.villageThreat()
+                                + " | Recent Violence: " + profile.recentViolence()
+                                + " | Historic Violence: " + profile.historicViolence()
+                                + " | Passive Mob Attacks: " + profile.passiveMobAttacks()
+                ),
                 false
         );
 
