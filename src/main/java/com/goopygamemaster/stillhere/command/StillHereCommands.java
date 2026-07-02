@@ -68,7 +68,15 @@ public final class StillHereCommands {
                                 + " | Village Threat: " + profile.villageThreat()
                                 + " | Recent Violence: " + profile.recentViolence()
                                 + " | Historic Violence: " + profile.historicViolence()
-                                + " | Passive Mob Attacks: " + profile.passiveMobAttacks()
+                                + " | Passive Attacks: " + profile.passiveMobAttacks()
+                                + " | Seconds Played: " + profile.secondsPlayed()
+                                + " | Underground: " + profile.secondsUnderground() + "s"
+                                + " | Dark Underground: " + profile.secondsInDarkUnderground() + "s"
+                                + " | Near Village: " + profile.secondsNearVillage() + "s"
+                                + " | Blocks Broken: " + profile.blocksBroken()
+                                + " | Underground Blocks: " + profile.blocksBrokenUnderground()
+                                + " | Village Blocks: " + profile.blocksBrokenNearVillage()
+                                + " | Distance: " + Math.round(profile.distanceTravelled())
                 ),
                 false
         );

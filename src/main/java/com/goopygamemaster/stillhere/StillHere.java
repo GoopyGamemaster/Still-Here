@@ -2,6 +2,7 @@ package com.goopygamemaster.stillhere;
 
 import com.goopygamemaster.stillhere.command.StillHereCommands;
 import com.goopygamemaster.stillhere.event.MobStaringHandler;
+import com.goopygamemaster.stillhere.event.PlayerTelemetryHandler;
 import com.goopygamemaster.stillhere.event.BackstepDebugHandler;
 import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.IEventBus;
@@ -21,6 +22,7 @@ public class StillHere {
     public StillHere(IEventBus modEventBus, ModContainer modContainer) {
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(MobStaringHandler.INSTANCE);
+        NeoForge.EVENT_BUS.register(PlayerTelemetryHandler.INSTANCE);
         NeoForge.EVENT_BUS.register(BackstepDebugHandler.INSTANCE);
 
         LOGGER.info("[Still Here] The world remembers.");

@@ -48,4 +48,12 @@ public final class StillHereDirector {
     public void recordVillageBlockBroken(ServerPlayer player) {
         getProfile(player).recordVillageBlockBroken();
     }
+
+    public void recordSecond(ServerPlayer player, boolean underground, boolean darkUnderground, boolean nearVillage, double distanceThisSecond) {
+        getProfile(player).recordSecond(underground, darkUnderground, nearVillage, distanceThisSecond);
+    }
+
+    public void recordBlockBroken(ServerPlayer player, boolean underground, boolean darkUnderground, boolean nearVillage) {
+        getProfile(player).recordBlockBroken(underground, darkUnderground, nearVillage);
+    }
 }

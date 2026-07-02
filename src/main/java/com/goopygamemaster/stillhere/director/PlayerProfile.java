@@ -8,6 +8,18 @@ public class PlayerProfile {
     private int historicViolence;
     private int passiveMobAttacks;
 
+    private long secondsPlayed;
+    private long secondsUnderground;
+    private long secondsInDarkUnderground;
+    private long secondsNearVillage;
+
+    private long blocksBroken;
+    private long blocksBrokenUnderground;
+    private long blocksBrokenInDarkness;
+    private long blocksBrokenNearVillage;
+
+    private double distanceTravelled;
+
     public int guilt() {
         return guilt;
     }
@@ -30,6 +42,42 @@ public class PlayerProfile {
 
     public int passiveMobAttacks() {
         return passiveMobAttacks;
+    }
+
+    public long secondsPlayed() {
+        return secondsPlayed;
+    }
+
+    public long secondsUnderground() {
+        return secondsUnderground;
+    }
+
+    public long secondsInDarkUnderground() {
+        return secondsInDarkUnderground;
+    }
+
+    public long secondsNearVillage() {
+        return secondsNearVillage;
+    }
+
+    public long blocksBroken() {
+        return blocksBroken;
+    }
+
+    public long blocksBrokenUnderground() {
+        return blocksBrokenUnderground;
+    }
+
+    public long blocksBrokenInDarkness() {
+        return blocksBrokenInDarkness;
+    }
+
+    public long blocksBrokenNearVillage() {
+        return blocksBrokenNearVillage;
+    }
+
+    public double distanceTravelled() {
+        return distanceTravelled;
     }
 
     public void recordPassiveMobAttack() {
@@ -63,6 +111,47 @@ public class PlayerProfile {
         addVillageThreat(25);
         addRecentViolence(20);
         addHistoricViolence(15);
+    }
+
+    public void recordSecond(boolean underground, boolean darkUnderground, boolean nearVillage, double distanceThisSecond) {
+        secondsPlayed++;
+
+        if (underground) {
+            secondsUnderground++;
+        }
+
+        if (darkUnderground) {
+            secondsInDarkUnderground++;
+        }
+
+        if (nearVillage) {
+            secondsNearVillage++;
+        }
+
+        if (distanceThisSecond > 0.0D) {
+            distanceTravelled += distanceThisSecond;
+        }
+
+        if (secondsPlayed % 60 == 0) {
+            tickSlowDecay();
+        }
+    }
+
+    public void recordBlockBroken(boolean underground, boolean darkUnderground, boolean nearVillage) {
+        blocksBroken++;
+
+        if (underground) {
+            blocksBrokenUnderground++;
+        }
+
+        if (darkUnderground) {
+            blocksBrokenInDarkness++;
+        }
+
+        if (nearVillage) {
+            blocksBrokenNearVillage++;
+            recordVillageBlockBroken();
+        }
     }
 
     public void tickSlowDecay() {
