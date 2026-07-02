@@ -5,6 +5,7 @@ import com.goopygamemaster.stillhere.director.PlayerProfile;
 import com.goopygamemaster.stillhere.director.StillHereDirector;
 import com.goopygamemaster.stillhere.event.BackstepDebugHandler;
 import com.goopygamemaster.stillhere.event.MobStaringHandler;
+import com.goopygamemaster.stillhere.event.VillagerFearHandler;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
@@ -37,6 +38,9 @@ public final class StillHereCommands {
                         .then(Commands.literal("backstep")
                                 .requires(source -> source.hasPermission(2))
                                 .executes(context -> forceBackstep(context.getSource())))
+                        .then(Commands.literal("villagers")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceVillagerFear(context.getSource())))
         );
     }
 
@@ -134,5 +138,18 @@ public final class StillHereCommands {
         );
 
         return affectedMobs;
+    }
+
+    private static int forceVillagerFear(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+
+        int affectedVillagers = VillagerFearHandler.INSTANCE.forceDebugVillagerFear(player);
+
+        source.sendSuccess(
+                () -> Component.literal("Still Here debug villager fear triggered. Villagers affected: " + affectedVillagers),
+                false
+        );
+
+        return affectedVillagers;
     }
 }

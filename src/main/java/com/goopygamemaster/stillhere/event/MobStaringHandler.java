@@ -12,6 +12,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.animal.IronGolem;
+import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
@@ -701,11 +702,11 @@ public class MobStaringHandler {
     }
 
     private boolean isValidStareMob(Mob mob) {
-        return mob.isAlive() && !(mob instanceof Enemy);
+        return mob.isAlive() && !(mob instanceof Enemy) && !(mob instanceof Villager);
     }
 
     private boolean isValidFearMob(Mob mob) {
-        return isValidStareMob(mob) && !(mob instanceof IronGolem);
+        return isValidStareMob(mob) && !(mob instanceof IronGolem) && !(mob instanceof Villager);
     }
 
     private boolean isNaturalAvoidanceCandidate(ServerPlayer player, Mob mob) {
@@ -810,20 +811,38 @@ public class MobStaringHandler {
 
     private SafeStep findSafeStep(ServerLevel level, Mob mob, double x, double y, double z) {
         int baseY = Mth.floor(y);
-        int[] yOffsets = new int[]{0, -1, 1};
+
+        /*
+         * Only allow same-level or one-block-down movement.
+         * Do not step upward during backstep, because that can shove animals into
+         * blocks or look like they are teleporting/jumping backwards.
+         */
+        int[] yOffsets = new int[]{0, -1};
 
         for (int offset : yOffsets) {
             int feetY = baseY + offset;
 
             BlockPos feet = BlockPos.containing(x, feetY, z);
             BlockPos below = feet.below();
-            BlockPos head = feet.above();
 
             boolean belowSolid = !level.getBlockState(below).getCollisionShape(level, below).isEmpty();
-            boolean feetClear = level.getBlockState(feet).getCollisionShape(level, feet).isEmpty();
-            boolean headClear = level.getBlockState(head).getCollisionShape(level, head).isEmpty();
 
-            if (belowSolid && feetClear && headClear) {
+            if (!belowSolid) {
+                continue;
+            }
+
+            double moveX = x - mob.getX();
+            double moveY = feetY - mob.getY();
+            double moveZ = z - mob.getZ();
+
+            /*
+             * This is the important safety check.
+             * It checks the mob's actual collision box at the target position,
+             * not just the feet/head blocks.
+             */
+            boolean fullBodyFits = level.noCollision(mob, mob.getBoundingBox().move(moveX, moveY, moveZ));
+
+            if (fullBodyFits) {
                 return new SafeStep(feetY);
             }
         }

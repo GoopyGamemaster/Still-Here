@@ -56,4 +56,28 @@ public final class StillHereDirector {
     public void recordBlockBroken(ServerPlayer player, boolean underground, boolean darkUnderground, boolean nearVillage) {
         getProfile(player).recordBlockBroken(underground, darkUnderground, nearVillage);
     }
+
+    public boolean canVillagerTrade(ServerPlayer player, ServerLevel level) {
+        HorrorPhase phase = getPhase(level);
+        PlayerProfile profile = getProfile(player);
+
+        if (phase == HorrorPhase.VANILLA_MASK || phase == HorrorPhase.RECOGNITION) {
+            return true;
+        }
+
+        if (phase == HorrorPhase.THE_WATCHER) {
+            return profile.recentViolence() <= 5
+                    && profile.villageThreat() <= 20
+                    && (profile.historicViolence() <= 25 || profile.remorse() >= 15);
+        }
+
+        if (phase == HorrorPhase.MEMORY_LEAKAGE) {
+            return profile.recentViolence() == 0
+                    && profile.villageThreat() <= 10
+                    && profile.guilt() <= 35
+                    && profile.remorse() >= 25;
+        }
+
+        return false;
+    }
 }
