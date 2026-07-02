@@ -4,6 +4,8 @@ import com.goopygamemaster.stillhere.director.HorrorPhase;
 import com.goopygamemaster.stillhere.director.PlayerProfile;
 import com.goopygamemaster.stillhere.director.StillHereDirector;
 import com.goopygamemaster.stillhere.event.BackstepDebugHandler;
+import com.goopygamemaster.stillhere.event.DirectorWhisperHandler;
+import com.goopygamemaster.stillhere.event.GolemProtectorHandler;
 import com.goopygamemaster.stillhere.event.MobStaringHandler;
 import com.goopygamemaster.stillhere.event.VillagerFearHandler;
 import com.mojang.brigadier.CommandDispatcher;
@@ -41,6 +43,12 @@ public final class StillHereCommands {
                         .then(Commands.literal("villagers")
                                 .requires(source -> source.hasPermission(2))
                                 .executes(context -> forceVillagerFear(context.getSource())))
+                        .then(Commands.literal("whisper")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceWhisper(context.getSource())))
+                        .then(Commands.literal("golems")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceGolems(context.getSource())))
         );
     }
 
@@ -90,7 +98,6 @@ public final class StillHereCommands {
 
     private static int forceStare(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-
         int affectedMobs = MobStaringHandler.INSTANCE.forceDebugStare(player);
 
         source.sendSuccess(
@@ -103,7 +110,6 @@ public final class StillHereCommands {
 
     private static int forceAvoidance(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-
         int affectedMobs = MobStaringHandler.INSTANCE.forceDebugAvoidance(player);
 
         source.sendSuccess(
@@ -116,7 +122,6 @@ public final class StillHereCommands {
 
     private static int forceFlee(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-
         int affectedMobs = MobStaringHandler.INSTANCE.forceDebugFlee(player);
 
         source.sendSuccess(
@@ -129,7 +134,6 @@ public final class StillHereCommands {
 
     private static int forceBackstep(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-
         int affectedMobs = BackstepDebugHandler.INSTANCE.forceDebugBackstep(player);
 
         source.sendSuccess(
@@ -142,7 +146,6 @@ public final class StillHereCommands {
 
     private static int forceVillagerFear(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-
         int affectedVillagers = VillagerFearHandler.INSTANCE.forceDebugVillagerFear(player);
 
         source.sendSuccess(
@@ -151,5 +154,29 @@ public final class StillHereCommands {
         );
 
         return affectedVillagers;
+    }
+
+    private static int forceWhisper(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        boolean sent = DirectorWhisperHandler.INSTANCE.forceDebugWhisper(player);
+
+        source.sendSuccess(
+                () -> Component.literal(sent ? "Still Here debug whisper sent." : "Still Here debug whisper had nothing to say."),
+                false
+        );
+
+        return sent ? 1 : 0;
+    }
+
+    private static int forceGolems(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        int affectedGolems = GolemProtectorHandler.INSTANCE.forceDebugGolems(player);
+
+        source.sendSuccess(
+                () -> Component.literal("Still Here debug golem protector triggered. Golems affected: " + affectedGolems),
+                false
+        );
+
+        return affectedGolems;
     }
 }

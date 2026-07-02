@@ -1,11 +1,13 @@
 package com.goopygamemaster.stillhere;
 
 import com.goopygamemaster.stillhere.command.StillHereCommands;
+import com.goopygamemaster.stillhere.event.BackstepDebugHandler;
+import com.goopygamemaster.stillhere.event.DirectorWhisperHandler;
+import com.goopygamemaster.stillhere.event.GolemProtectorHandler;
 import com.goopygamemaster.stillhere.event.MobStaringHandler;
 import com.goopygamemaster.stillhere.event.PlayerTelemetryHandler;
 import com.goopygamemaster.stillhere.event.VillagerFearHandler;
 import com.goopygamemaster.stillhere.event.VillagerTradeHandler;
-import com.goopygamemaster.stillhere.event.BackstepDebugHandler;
 import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -24,10 +26,12 @@ public class StillHere {
     public StillHere(IEventBus modEventBus, ModContainer modContainer) {
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(MobStaringHandler.INSTANCE);
+        NeoForge.EVENT_BUS.register(BackstepDebugHandler.INSTANCE);
         NeoForge.EVENT_BUS.register(PlayerTelemetryHandler.INSTANCE);
         NeoForge.EVENT_BUS.register(VillagerFearHandler.INSTANCE);
         NeoForge.EVENT_BUS.register(VillagerTradeHandler.INSTANCE);
-        NeoForge.EVENT_BUS.register(BackstepDebugHandler.INSTANCE);
+        NeoForge.EVENT_BUS.register(DirectorWhisperHandler.INSTANCE);
+        NeoForge.EVENT_BUS.register(GolemProtectorHandler.INSTANCE);
 
         LOGGER.info("[Still Here] The world remembers.");
     }
