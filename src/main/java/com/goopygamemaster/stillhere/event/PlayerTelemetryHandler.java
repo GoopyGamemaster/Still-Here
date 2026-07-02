@@ -2,6 +2,7 @@ package com.goopygamemaster.stillhere.event;
 
 import com.goopygamemaster.stillhere.director.StillHereDirector;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.npc.Villager;
@@ -61,7 +62,7 @@ public class PlayerTelemetryHandler {
                 distanceThisSecond
         );
 
-        StillHereDirector.INSTANCE.evaluateMilestones(player, level);
+
     }
 
     @SubscribeEvent
@@ -77,13 +78,36 @@ public class PlayerTelemetryHandler {
         boolean underground = isUnderground(player);
         boolean darkUnderground = underground && isDark(level, player.blockPosition());
         boolean nearVillage = isNearVillage(level, player);
+        boolean sensitiveVillageBlock = nearVillage && isSensitiveVillageBlock(level, event.getPos());
 
         StillHereDirector.INSTANCE.recordBlockBroken(
                 player,
                 underground,
                 darkUnderground,
-                nearVillage
+                sensitiveVillageBlock
         );
+    }
+
+    private boolean isSensitiveVillageBlock(ServerLevel level, BlockPos pos) {
+        String blockName = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).getPath();
+
+        return blockName.contains("bed")
+                || blockName.contains("door")
+                || blockName.contains("bell")
+                || blockName.contains("chest")
+                || blockName.contains("barrel")
+                || blockName.contains("lectern")
+                || blockName.contains("composter")
+                || blockName.contains("loom")
+                || blockName.contains("cartography_table")
+                || blockName.contains("fletching_table")
+                || blockName.contains("smithing_table")
+                || blockName.contains("grindstone")
+                || blockName.contains("stonecutter")
+                || blockName.contains("blast_furnace")
+                || blockName.contains("smoker")
+                || blockName.contains("brewing_stand")
+                || blockName.contains("cauldron");
     }
 
     private boolean isUnderground(ServerPlayer player) {

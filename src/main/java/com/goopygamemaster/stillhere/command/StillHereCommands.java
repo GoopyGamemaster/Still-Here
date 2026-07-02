@@ -49,6 +49,9 @@ public final class StillHereCommands {
                         .then(Commands.literal("golems")
                                 .requires(source -> source.hasPermission(2))
                                 .executes(context -> forceGolems(context.getSource())))
+                        .then(Commands.literal("eject")
+                                .requires(source -> source.hasPermission(2))
+                                .executes(context -> forceEject(context.getSource())))
         );
     }
 
@@ -179,4 +182,16 @@ public final class StillHereCommands {
 
         return affectedGolems;
     }
-}
+
+    private static int forceEject(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+
+        boolean ejected = GolemProtectorHandler.INSTANCE.forceDebugEject(player);
+
+        source.sendSuccess(
+                () -> Component.literal(ejected ? "Still Here debug ejection triggered." : "Still Here debug ejection failed. No valid village/golem found."),
+                false
+        );
+
+        return ejected ? 1 : 0;
+    }}
