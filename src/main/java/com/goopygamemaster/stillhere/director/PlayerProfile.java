@@ -1,5 +1,8 @@
 package com.goopygamemaster.stillhere.director;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class PlayerProfile {
     private int guilt;
     private int remorse;
@@ -19,6 +22,8 @@ public class PlayerProfile {
     private long blocksBrokenNearVillage;
 
     private double distanceTravelled;
+
+    private final Set<String> deliveredMessages = new HashSet<>();
 
     public int guilt() {
         return guilt;
@@ -80,12 +85,24 @@ public class PlayerProfile {
         return distanceTravelled;
     }
 
+    public boolean markMessageDelivered(String key) {
+        return deliveredMessages.add(key);
+    }
+
     public void recordPassiveMobAttack() {
         passiveMobAttacks++;
 
-        addGuilt(4);
-        addRecentViolence(6);
-        addHistoricViolence(2);
+        /*
+         * Killing animals is normal Minecraft survival.
+         * A single attack should barely move the Director.
+         * Patterned violence matters more than individual hits.
+         */
+        addGuilt(1);
+        addRecentViolence(2);
+
+        if (passiveMobAttacks % 5 == 0) {
+            addHistoricViolence(1);
+        }
     }
 
     public void recordPeacefulVillageTrade() {

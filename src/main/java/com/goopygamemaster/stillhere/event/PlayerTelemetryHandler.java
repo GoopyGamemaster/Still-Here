@@ -60,6 +60,8 @@ public class PlayerTelemetryHandler {
                 nearVillage,
                 distanceThisSecond
         );
+
+        StillHereDirector.INSTANCE.evaluateMilestones(player, level);
     }
 
     @SubscribeEvent
