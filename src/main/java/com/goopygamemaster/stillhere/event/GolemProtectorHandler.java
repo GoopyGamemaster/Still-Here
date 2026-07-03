@@ -25,6 +25,7 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -40,6 +41,27 @@ public class GolemProtectorHandler {
     private static final double VILLAGE_SCAN_RADIUS = 56.0D;
     private static final double GOLEM_SCAN_RADIUS = 72.0D;
     private static final double PLAYER_LEAVE_RADIUS = 90.0D;
+
+    /*
+     * Normal protector behaviour should not drag golems miles out of the village.
+     * Higher-priority states like chase/carry/hostile are handled separately.
+     */
+    private static final double NORMAL_GOLEM_LEASH_RADIUS = VILLAGE_SCAN_RADIUS + 10.0D;
+
+    /*
+     * Only some golems should surround the player.
+     * The rest should split off and guard villagers.
+     */
+    private static final int PHASE_1_MAX_SURROUND_GOLEMS = 1;
+    private static final int PHASE_2_MAX_SURROUND_GOLEMS = 2;
+    private static final int PHASE_3_MAX_SURROUND_GOLEMS = 3;
+
+    private static final double SURROUND_RING_RADIUS = 5.8D;
+    /*
+     * Ejection chase is boundary-based, not time-based.
+     * If the player escapes this village radius, the golem stops chasing and returns.
+     */
+    private static final double EJECTION_CHASE_CANCEL_RADIUS = VILLAGE_SCAN_RADIUS + 6.0D;
     private static final int BELL_SEARCH_RADIUS = 48;
 
     private static final double PROTECTOR_WALK_SPEED = 0.85D;
@@ -57,7 +79,14 @@ public class GolemProtectorHandler {
     private static final float WARNING_HIT_DAMAGE = 2.0F;
 
     private static final int POST_WARNING_GRACE_TICKS = 20 * 8;
-    private static final int CARRY_TIMEOUT_TICKS = 20 * 4;
+        private static final int CARRY_TIMEOUT_TICKS = 20 * 4;
+
+    /*
+     * The golem must physically reach the player before the carry begins.
+     * No long-range teleport pickup.
+     */
+    private static final double PICKUP_DISTANCE = 1.35D;
+    private static final int PICKUP_APPROACH_TIMEOUT_TICKS = 20 * 12;
     private static final double CARRY_FINISH_DISTANCE = 8.0D;
 
     private static final int PHASE_2_WARNING_PRESSURE_TICKS = 20 * 85;
@@ -91,6 +120,10 @@ public class GolemProtectorHandler {
 
         if (!(player.level() instanceof ServerLevel level)) {
             return;
+        }
+
+        if (player.tickCount < 40) {
+            clearPlayerCarryState(player.getUUID());
         }
 
         updateForcedThrow(player);
@@ -215,6 +248,14 @@ public class GolemProtectorHandler {
 
         return true;
     }
+    private void clearPlayerCarryState(UUID playerId) {
+        activeForcedThrows.remove(playerId);
+
+        activeCarries.entrySet().removeIf(entry ->
+                entry.getValue().playerId().equals(playerId)
+        );
+    }
+
     private void tryActivateProtectors(ServerPlayer player, ServerLevel level) {
         HorrorPhase phase = StillHereDirector.INSTANCE.getPhase(level);
 
@@ -350,6 +391,16 @@ public class GolemProtectorHandler {
             return;
         }
 
+        /*
+         * Normal protector leash.
+         * If a golem has drifted too far while not actively carrying/chasing/hostile,
+         * send it back instead of letting it wander outside the village.
+         */
+        if (target.villageKey().anchorPos().distSqr(golem.blockPosition()) > NORMAL_GOLEM_LEASH_RADIUS * NORMAL_GOLEM_LEASH_RADIUS) {
+            returnGolemHomeOrEnd(golem, level, target.villageKey());
+            return;
+        }
+
         List<Villager> villagers = findNearbyVillagers(level, Vec3.atBottomCenterOf(target.villageKey().anchorPos()), VILLAGE_SCAN_RADIUS);
 
         if (villagers.isEmpty()) {
@@ -357,7 +408,7 @@ public class GolemProtectorHandler {
             return;
         }
 
-        Villager protectedVillager = findProtectedVillager(player, villagers);
+        Villager protectedVillager = findAssignedProtectedVillager(golem, player, villagers);
 
         if (protectedVillager == null) {
             returnGolemHomeOrEnd(golem, level, target.villageKey());
@@ -419,7 +470,7 @@ public class GolemProtectorHandler {
         facePlayer(golem, player);
 
         if (gameTime >= target.nextRepathGameTime() || golem.getNavigation().isDone()) {
-            Vec3 guardPoint = findGuardPoint(level, player, protectedVillager, golem);
+            Vec3 guardPoint = findProtectorGoalPoint(level, player, villagers, protectedVillager, golem, target.villageKey(), phase);
 
             if (guardPoint != null) {
                 golem.getNavigation().moveTo(guardPoint.x, guardPoint.y, guardPoint.z, PROTECTOR_WALK_SPEED);
@@ -521,7 +572,16 @@ public class GolemProtectorHandler {
 
     private void performWarningHit(IronGolem golem, ServerPlayer player, ServerLevel level, VillageMemory memory) {
         player.displayClientMessage(Component.literal("Leave"), true);
-        player.hurt(golem.damageSources().mobAttack(golem), WARNING_HIT_DAMAGE);
+
+        /*
+         * Normal warning hit. Do not bypass Minecraft difficulty.
+         * If the player is in Peaceful, damage may be reduced/ignored by vanilla rules.
+         */
+        player.invulnerableTime = 0;
+        player.hurtTime = 0;
+        player.hurt(level.damageSources().mobAttack(golem), WARNING_HIT_DAMAGE);
+
+        level.playSound(null, player.blockPosition(), SoundEvents.PLAYER_HURT, SoundSource.PLAYERS, 0.8F, 0.8F);
 
         long gameTime = level.getGameTime();
 
@@ -535,7 +595,13 @@ public class GolemProtectorHandler {
         long gameTime = level.getGameTime();
         Vec3 destination = findEjectionDestination(level, player, villageKey);
 
-        memory.carryActiveUntilGameTime = gameTime + CARRY_TIMEOUT_TICKS;
+        /*
+         * The pickup approach does not expire after X seconds.
+         * It only ends when:
+         * - the golem reaches the player and picks them up
+         * - the player leaves the village boundary
+         */
+        memory.carryActiveUntilGameTime = Long.MAX_VALUE;
 
         activeCarries.put(
                 golem.getUUID(),
@@ -545,34 +611,20 @@ public class GolemProtectorHandler {
                         destination.x,
                         destination.y,
                         destination.z,
-                        gameTime + CARRY_TIMEOUT_TICKS
+                        0L,
+                        false
                 )
         );
 
         /*
-         * Carry mode must not use vanilla targeting.
-         * If the golem has a target, it will try to attack instead of carrying.
+         * Approach first. Do not mount/teleport the player until the golem is close.
          */
         fullyHostileGolems.remove(golem.getUUID());
         golem.setTarget(null);
         golem.getNavigation().stop();
+        golem.getNavigation().moveTo(player, CARRY_SPEED);
 
-        /*
-         * Proper physical grab:
-         * mount the player onto the selected golem instead of teleporting them every tick.
-         * This should visibly attach the player to that exact golem.
-         */
-        if (player.getVehicle() != golem) {
-            player.startRiding(golem, true);
-        }
-
-        player.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 80, 0, false, false, true));
-        player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 10, false, false, true));
-        player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 140, 4, false, false, true));
-
-        golem.getNavigation().moveTo(destination.x, destination.y, destination.z, CARRY_SPEED);
-
-        level.playSound(null, player.blockPosition(), SoundEvents.IRON_GOLEM_ATTACK, SoundSource.HOSTILE, 1.2F, 0.7F);
+        level.playSound(null, golem.blockPosition(), SoundEvents.IRON_GOLEM_ATTACK, SoundSource.HOSTILE, 0.8F, 0.8F);
     }
 
     private void updateCarry(IronGolem golem, ServerLevel level, CarryTarget carryTarget) {
@@ -586,18 +638,92 @@ public class GolemProtectorHandler {
 
         long gameTime = level.getGameTime();
 
-        /*
-         * Keep this golem in carry mode, not attack mode.
-         */
         fullyHostileGolems.remove(golem.getUUID());
         golem.setTarget(null);
 
         /*
-         * Keep the player physically attached to the chosen golem.
-         * If they dismount or get desynced, remount them while carry is active.
+         * Stage 1: approach the player.
+         * The player is not mounted until the golem is physically close enough.
+         */
+        if (!carryTarget.pickedUp()) {
+            /*
+             * Boundary escape.
+             * If the player makes it out of the village area before the golem gets close,
+             * they are rewarded and the golem stops the ejection chase.
+             */
+            if (!isPlayerInsideVillageBoundary(player, carryTarget.villageKey(), EJECTION_CHASE_CANCEL_RADIUS)) {
+                VillageMemory memory = getVillageMemory(player.getUUID(), carryTarget.villageKey());
+                memory.carryActiveUntilGameTime = 0L;
+
+                activeCarries.remove(golem.getUUID());
+                returnGolemHomeOrEnd(golem, level, carryTarget.villageKey());
+                return;
+            }
+
+            facePlayer(golem, player);
+
+            if (golem.distanceToSqr(player) > PICKUP_DISTANCE * PICKUP_DISTANCE) {
+                if (golem.getNavigation().isDone() || golem.tickCount % 10 == 0) {
+                    golem.getNavigation().moveTo(player, CARRY_SPEED);
+                }
+
+                return;
+            }
+
+            /*
+             * Stage 2 begins here: the golem has physically reached the player,
+             * so now it can grab them.
+             */
+            if (player.getVehicle() != golem) {
+                player.startRiding(golem, true);
+            }
+
+            if (player.getVehicle() != golem) {
+                activeCarries.remove(golem.getUUID());
+                returnGolemHomeOrEnd(golem, level, carryTarget.villageKey());
+                return;
+            }
+
+            player.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 80, 0, false, false, true));
+            player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 10, false, false, true));
+            player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 140, 4, false, false, true));
+
+            level.playSound(null, player.blockPosition(), SoundEvents.IRON_GOLEM_ATTACK, SoundSource.HOSTILE, 1.2F, 0.7F);
+
+            CarryTarget pickedUpTarget = carryTarget.withPickedUp(gameTime + CARRY_TIMEOUT_TICKS);
+            activeCarries.put(golem.getUUID(), pickedUpTarget);
+
+            golem.getNavigation().stop();
+            golem.getNavigation().moveTo(
+                    pickedUpTarget.destinationX(),
+                    pickedUpTarget.destinationY(),
+                    pickedUpTarget.destinationZ(),
+                    CARRY_SPEED
+            );
+
+            return;
+        }
+
+        /*
+         * Stage 2: carry the mounted player to the ejection point.
+         * If the player presses Shift, immediately remount them.
+         * This only runs during Still Here's active golem carry state,
+         * so normal horse riding is not affected.
          */
         if (player.getVehicle() != golem) {
+            if (player.tickCount < 40 || !player.isAlive()) {
+                activeCarries.remove(golem.getUUID());
+                returnGolemHomeOrEnd(golem, level, carryTarget.villageKey());
+                return;
+            }
+
             player.startRiding(golem, true);
+
+            if (player.getVehicle() != golem) {
+                activeCarries.remove(golem.getUUID());
+                returnGolemHomeOrEnd(golem, level, carryTarget.villageKey());
+                return;
+            }
         }
 
         player.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 40, 0, false, false, true));
@@ -690,6 +816,14 @@ public class GolemProtectorHandler {
         ForcedThrow forcedThrow = activeForcedThrows.get(player.getUUID());
 
         if (forcedThrow == null) {
+            return;
+        }
+
+        /*
+         * If the player has just respawned, do not continue an old throw.
+         */
+        if (player.tickCount < 40 || !player.isAlive()) {
+            activeForcedThrows.remove(player.getUUID());
             return;
         }
 
@@ -843,6 +977,10 @@ public class GolemProtectorHandler {
         );
     }
 
+    private boolean isPlayerInsideVillageBoundary(ServerPlayer player, VillageKey villageKey, double radius) {
+        return villageKey.anchorPos().distSqr(player.blockPosition()) <= radius * radius;
+    }
+
     private boolean isPlayerTooCloseToVillager(ServerPlayer player, Villager villager, HorrorPhase phase) {
         double distance = switch (phase) {
             case VANILLA_MASK -> 0.0D;
@@ -878,6 +1016,215 @@ public class GolemProtectorHandler {
         );
     }
 
+    private Villager findAssignedProtectedVillager(IronGolem golem, ServerPlayer player, List<Villager> villagers) {
+        List<Villager> sortedVillagers = new ArrayList<>(
+                villagers.stream()
+                        .filter(Villager::isAlive)
+                        .toList()
+        );
+
+        if (sortedVillagers.isEmpty()) {
+            return findProtectedVillager(player, villagers);
+        }
+
+        sortedVillagers.sort(Comparator.comparing(villager -> villager.getUUID().toString()));
+
+        int index = Math.floorMod(golem.getUUID().hashCode(), sortedVillagers.size());
+
+        return sortedVillagers.get(index);
+    }
+
+    private Vec3 findProtectorGoalPoint(
+            ServerLevel level,
+            ServerPlayer player,
+            List<Villager> villagers,
+            Villager protectedVillager,
+            IronGolem golem,
+            VillageKey villageKey,
+            HorrorPhase phase
+    ) {
+        /*
+         * Formation logic:
+         * - a small number of golems surround/intimidate the player
+         * - the remaining golems split off to protect assigned villagers
+         */
+        if (shouldUseIntimidationRing(player, villagers, phase)
+                && isAssignedSurroundGolem(level, golem, villageKey, phase)) {
+            Vec3 surroundPoint = findSurroundSlot(level, player, golem, villageKey, phase);
+
+            if (surroundPoint != null) {
+                return surroundPoint;
+            }
+        }
+
+        Vec3 distributedGuardPoint = findDistributedGuardPoint(level, player, protectedVillager, golem, villageKey);
+
+        if (distributedGuardPoint != null) {
+            return distributedGuardPoint;
+        }
+
+        return findGuardPoint(level, player, protectedVillager, golem);
+    }
+
+    private boolean shouldUseIntimidationRing(ServerPlayer player, List<Villager> villagers, HorrorPhase phase) {
+        double radius = switch (phase) {
+            case VANILLA_MASK -> 0.0D;
+            case RECOGNITION -> 13.0D;
+            case THE_WATCHER -> 18.0D;
+            case MEMORY_LEAKAGE -> 24.0D;
+        };
+
+        if (radius <= 0.0D) {
+            return false;
+        }
+
+        double radiusSqr = radius * radius;
+
+        return villagers.stream()
+                .filter(Villager::isAlive)
+                .anyMatch(villager -> villager.distanceToSqr(player) <= radiusSqr);
+    }
+
+    private Vec3 findSurroundSlot(ServerLevel level, ServerPlayer player, IronGolem golem, VillageKey villageKey, HorrorPhase phase) {
+        List<IronGolem> surroundGolems = getSurroundGolemsForVillage(level, villageKey, phase);
+
+        if (surroundGolems.isEmpty()) {
+            return null;
+        }
+
+        int index = surroundGolems.indexOf(golem);
+
+        if (index < 0) {
+            return null;
+        }
+
+        int count = surroundGolems.size();
+
+        Vec3 playerPos = player.position();
+        Vec3 villageCentre = Vec3.atBottomCenterOf(villageKey.anchorPos());
+
+        Vec3 fromVillageToPlayer = playerPos.subtract(villageCentre);
+
+        double baseAngle = fromVillageToPlayer.lengthSqr() > 0.001D
+                ? Math.atan2(fromVillageToPlayer.z, fromVillageToPlayer.x)
+                : 0.0D;
+
+        /*
+         * Slight offset so golems do not all try to take the exact cardinal points.
+         */
+        double angle = baseAngle + ((Math.PI * 2.0D) * index / Math.max(1, count)) + 0.35D;
+        double targetX = playerPos.x + Math.cos(angle) * SURROUND_RING_RADIUS;
+        double targetZ = playerPos.z + Math.sin(angle) * SURROUND_RING_RADIUS;
+
+        BlockPos ground = findNearbyGround(level, BlockPos.containing(targetX, golem.getY(), targetZ));
+
+        if (ground == null) {
+            return null;
+        }
+
+        /*
+         * Do not let the intimidation ring pull golems outside the village.
+         */
+        if (villageKey.anchorPos().distSqr(ground) > NORMAL_GOLEM_LEASH_RADIUS * NORMAL_GOLEM_LEASH_RADIUS) {
+            return null;
+        }
+
+        return Vec3.atBottomCenterOf(ground);
+    }
+
+    private Vec3 findDistributedGuardPoint(ServerLevel level, ServerPlayer player, Villager villager, IronGolem golem, VillageKey villageKey) {
+        Vec3 base = findGuardPoint(level, player, villager, golem);
+
+        if (base == null) {
+            return null;
+        }
+
+        /*
+         * Offset each golem around its assigned villager so they do not all path
+         * to the same guard block.
+         */
+        int slot = Math.floorMod(golem.getUUID().hashCode(), 6);
+        double angle = (Math.PI * 2.0D) * slot / 6.0D;
+        double offsetDistance = 2.6D;
+
+        double targetX = base.x + Math.cos(angle) * offsetDistance;
+        double targetZ = base.z + Math.sin(angle) * offsetDistance;
+
+        BlockPos ground = findNearbyGround(level, BlockPos.containing(targetX, golem.getY(), targetZ));
+
+        if (ground == null) {
+            return base;
+        }
+
+        if (villageKey.anchorPos().distSqr(ground) > NORMAL_GOLEM_LEASH_RADIUS * NORMAL_GOLEM_LEASH_RADIUS) {
+            return base;
+        }
+
+        return Vec3.atBottomCenterOf(ground);
+    }
+
+    private boolean isAssignedSurroundGolem(ServerLevel level, IronGolem golem, VillageKey villageKey, HorrorPhase phase) {
+        return getSurroundGolemsForVillage(level, villageKey, phase).contains(golem);
+    }
+
+    private List<IronGolem> getSurroundGolemsForVillage(ServerLevel level, VillageKey villageKey, HorrorPhase phase) {
+        List<IronGolem> protectors = getProtectorGolemsForVillage(level, villageKey);
+
+        if (protectors.isEmpty()) {
+            return protectors;
+        }
+
+        int maxSurround = switch (phase) {
+            case VANILLA_MASK -> 0;
+            case RECOGNITION -> PHASE_1_MAX_SURROUND_GOLEMS;
+            case THE_WATCHER -> PHASE_2_MAX_SURROUND_GOLEMS;
+            case MEMORY_LEAKAGE -> PHASE_3_MAX_SURROUND_GOLEMS;
+        };
+
+        maxSurround = Math.min(maxSurround, protectors.size());
+
+        return new ArrayList<>(protectors.subList(0, maxSurround));
+    }
+
+    private List<IronGolem> getProtectorGolemsForVillage(ServerLevel level, VillageKey villageKey) {
+        AABB box = new AABB(
+                villageKey.anchorPos().getX() - GOLEM_SCAN_RADIUS,
+                villageKey.anchorPos().getY() - 20.0D,
+                villageKey.anchorPos().getZ() - GOLEM_SCAN_RADIUS,
+                villageKey.anchorPos().getX() + GOLEM_SCAN_RADIUS,
+                villageKey.anchorPos().getY() + 20.0D,
+                villageKey.anchorPos().getZ() + GOLEM_SCAN_RADIUS
+        );
+
+        List<IronGolem> golems = new ArrayList<>();
+
+        for (IronGolem candidate : level.getEntitiesOfClass(IronGolem.class, box, IronGolem::isAlive)) {
+            GolemProtectorTarget candidateTarget = activeProtectors.get(candidate.getUUID());
+
+            if (candidateTarget == null) {
+                continue;
+            }
+
+            if (!candidateTarget.villageKey().id().equals(villageKey.id())) {
+                continue;
+            }
+
+            if (activeCarries.containsKey(candidate.getUUID())) {
+                continue;
+            }
+
+            if (fullyHostileGolems.containsKey(candidate.getUUID())) {
+                continue;
+            }
+
+            golems.add(candidate);
+        }
+
+        golems.sort(Comparator.comparing(candidate -> candidate.getUUID().toString()));
+
+        return golems;
+    }
+
     private Vec3 findGuardPoint(ServerLevel level, ServerPlayer player, Villager villager, IronGolem golem) {
         Vec3 playerPos = player.position();
         Vec3 villagerPos = villager.position();
@@ -899,7 +1246,6 @@ public class GolemProtectorHandler {
 
         return Vec3.atBottomCenterOf(ground);
     }
-
     private void faceAwayFromVillage(IronGolem golem, VillageKey villageKey) {
         Vec3 villageCentre = Vec3.atBottomCenterOf(villageKey.anchorPos());
         Vec3 away = golem.position().subtract(villageCentre);
@@ -918,6 +1264,8 @@ public class GolemProtectorHandler {
     }
 
     private void returnGolemHomeOrEnd(IronGolem golem, ServerLevel level, VillageKey villageKey) {
+        fullyHostileGolems.remove(golem.getUUID());
+        activeCarries.remove(golem.getUUID());
         golem.setTarget(null);
 
         BlockPos ground = findNearbyGround(level, villageKey.anchorPos());
@@ -992,7 +1340,9 @@ public class GolemProtectorHandler {
     }
 
     private void endProtector(IronGolem golem) {
+        fullyHostileGolems.remove(golem.getUUID());
         golem.setTarget(null);
+        golem.getNavigation().stop();
         activeCarries.remove(golem.getUUID());
         activeProtectors.remove(golem.getUUID());
     }
@@ -1033,8 +1383,20 @@ public class GolemProtectorHandler {
             double destinationX,
             double destinationY,
             double destinationZ,
-            long endGameTime
+            long endGameTime,
+            boolean pickedUp
     ) {
+        CarryTarget withPickedUp(long newEndGameTime) {
+            return new CarryTarget(
+                    playerId,
+                    villageKey,
+                    destinationX,
+                    destinationY,
+                    destinationZ,
+                    newEndGameTime,
+                    true
+            );
+        }
     }
 
     private record ForcedThrow(

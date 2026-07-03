@@ -32,6 +32,7 @@ public class StillHere {
         NeoForge.EVENT_BUS.register(VillagerTradeHandler.INSTANCE);
         NeoForge.EVENT_BUS.register(DirectorWhisperHandler.INSTANCE);
         NeoForge.EVENT_BUS.register(GolemProtectorHandler.INSTANCE);
+        NeoForge.EVENT_BUS.register(new com.goopygamemaster.stillhere.event.HostileMobSuppressionHandler());
 
         LOGGER.info("[Still Here] The world remembers.");
     }
